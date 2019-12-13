@@ -12,6 +12,7 @@
  * Make dash in moves optional.
  * Commands to place pieces on the board. (Ne4 would put a kinght on e4?)
  * Command to clear the board.
+ * Display PGN files using Unicode pieces instead of letters.
  */
 
 bool use_unicode = true;
