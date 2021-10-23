@@ -1,5 +1,6 @@
 #include <array>
 #include <cctype>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -47,18 +48,47 @@ void set_position(Position& pos, std::string fen)
     }
 }
 
+template <typename I, typename T>
+I find_not(I first, I last, T x)
+{
+    return std::find_if(first, last, [x](T y){ return y != x; });
+}
+
 std::string pos_to_fen(const Position& pos)
 {
+    //TODO: Just use a string or vector instead of a stringstream?
     std::ostringstream ss;
+    bool first{true};
     for (const auto& rank: pos.board) {
-        for (const char c: rank) {
-            if (::isalpha(c)) {
-                ss << c;
-            } else {
+        if (not std::exchange(first, false)) {
+            //Output the rank separator.
+            ss << '/';
+        }
+        //Assume we start with a dot.
+        auto dot = rank.begin();
+        while (true) {
+            //Find the next piece on this rank.
+            auto piece = find_not(dot, rank.end(), '.');
+            //If the length of the dot run is zero, do nothing...
+            if (dot != piece) {
+                //...otherwise output the length of the dot run.
+                ss << std::to_string(std::distance(dot, piece));
+            }
+            //Are we done?
+            if (rank.end() == piece) {
+                break;
+            }
+            //Copy a run of pieces.
+            dot = std::find(piece, rank.end(), '.');
+            std::copy(piece, dot, std::ostream_iterator<char>(ss));
+            //Are we done?
+            if (rank.end() == dot) {
+                break;
             }
         }
     }
     return ss.str();
+    //TODO: Need to track the info to add the annotations at the end.
 }
 
 std::string to_unicode(char c)
@@ -112,6 +142,10 @@ int rank_to_index(int r)
 
 void do_move(Position& pos, const std::string& input)
 {
+    if (input.size() < 5) {
+        std::cout << std::quoted(input) << " is not a valid move.\n";
+        return;
+    }
     int start_file = file_to_index(input.at(0));
     int start_rank = rank_to_index(input.at(1));
     int end_file = file_to_index(input.at(3));
@@ -128,6 +162,12 @@ void undo(Position& pos)
     std::swap(pos, undo_pos);
 }
 
+void save(const Position& pos)
+{
+    std::ofstream out{"game.fen"};
+    out << pos_to_fen(pos) << '\n';
+}
+
 void help()
 {
     std::cout <<
@@ -137,6 +177,7 @@ void help()
         "undo\tGo back to the previous position\n"
         "unicode\tUse Unicode symbols\n"
         "ascii\tUse ASCII characters\n"
+        "fen\tOutput position in FEN format (incomplete)\n"
         "To move, enter start file & rank, a dash, and end\n"
         "e.g. e2-e4\n";
 }
@@ -152,7 +193,7 @@ int main()
     std::string line;
     std::cout << "> " << std::flush;
     while (std::getline(std::cin, line)) {
-        if ("quit" == line) {
+        if (("quit" == line) or ("exit" == line)) {
             break;
         } else if ("help" == line) {
             help();
@@ -165,6 +206,8 @@ int main()
             use_unicode = true;
         } else if ("ascii" == line) {
             use_unicode = false;
+        } else if ("fen" == line) {
+            std::cout << pos_to_fen(pos) << '\n';
         } else {
             do_move(pos, line);
         }
