@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 /*
@@ -26,7 +27,7 @@ struct Position {
 
 Position undo_pos;
 
-void set_position(Position& pos, std::string fen)
+void set_position(Position& pos, std::string_view fen)
 {
     int rank_index = 0; // 0 == rank 8
     int file_index = 0; // 0 == a
@@ -140,7 +141,7 @@ int rank_to_index(int r)
     return 8 - (r - '0');
 }
 
-void do_move(Position& pos, const std::string& input)
+void do_move(Position& pos, std::string_view input)
 {
     if (input.size() < 5) {
         std::cout << std::quoted(input) << " is not a valid move.\n";
