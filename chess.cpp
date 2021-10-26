@@ -175,6 +175,7 @@ void help()
         "help\tThis text\n"
         "quit\tExit this program\n"
         "reset\tReset to the starting position\n"
+        "clear\tEmpty the board\n"
         "undo\tGo back to the previous position\n"
         "unicode\tUse Unicode symbols\n"
         "ascii\tUse ASCII characters\n"
@@ -201,6 +202,9 @@ int main()
         } else if ("reset" == line) {
             undo_pos = pos;
             set_position(pos, start);
+        } else if ("clear" == line) {
+            undo_pos = pos;
+            set_position(pos, "8/8/8/8/8/8/8/8 w KQkq - 0 1");
         } else if ("undo" == line) {
             undo(pos);
         } else if ("unicode" == line) {
