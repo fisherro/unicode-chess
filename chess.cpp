@@ -268,31 +268,41 @@ void find_candidates(Position::Square_list& squares, const San_bits& bits, const
     }
 }
 
-Position::Square_list find_candidate_bishops(San_bits& bits, const Position& pos, bool white)
+//Note: piece is already cased by player color
+Position::Square_list find_slider_candidates(San_bits& bits, const Position& pos, const char piece)
 {
-    const char piece { white? 'B': 'b' };
+    using Offsets_list = std::vector<std::pair<int, int>>;
+    const Offsets_list bishop_offsets{{-1,-1},{-1,1},{1,-1},{1,1}};
+    const Offsets_list rook_offsets{{-1,0},{0,-1},{1,0},{0,1}};
     Position::Square_list squares;
-    find_candidates(squares, bits, pos, piece, -1, -1);
-    find_candidates(squares, bits, pos, piece, -1, 1);
-    find_candidates(squares, bits, pos, piece, 1, -1);
-    find_candidates(squares, bits, pos, piece, 1, 1);
+    if ('R' != bits.piece) {
+        for (const auto& offsets: bishop_offsets) {
+            find_candidates(squares, bits, pos, piece, offsets.first, offsets.second);
+        }
+    }
+    if ('B' != bits.piece) {
+        for (const auto& offsets: rook_offsets) {
+            find_candidates(squares, bits, pos, piece, offsets.first, offsets.second);
+        }
+    }
     return squares;
 }
 
-void fillin_bishop(San_bits& bits, const Position& pos, const bool white)
+void fillin_slider(San_bits& bits, const Position& pos, const bool white)
 {
-    //TODO: Handle captures
-    auto candidates { find_candidate_bishops(bits, pos, white) };
+    const char piece = white? std::toupper(bits.piece, std::locale()): std::tolower(bits.piece, std::locale());
+    auto candidates { find_slider_candidates(bits, pos, piece) };
     if (0 == candidates.size()) throw Bad_move{to_string(bits)};
     if (1 == candidates.size()) {
         bits.from_file = candidates[0].first;
         bits.from_rank = candidates[0].second;
         return;
     }
-    for (const auto& bishop: candidates) {
-        std::cout << "candidate: " << bishop.first << bishop.second << '\n';
+    //TODO: Disambiguate candidates if possible
+    for (const auto& candidate: candidates) {
+        std::cout << "candidate: " << candidate.first << candidate.second << '\n';
     }
-    throw Bad_move{"Too many bishops"}; //TODO: Probably something else here
+    throw Bad_move{"Too many candidates"};
 }
 
 //TODO: This doesn't catch many illegal moves. I'm not sure if it should.
@@ -308,10 +318,18 @@ void fillin_san_blanks(San_bits& bits, const Position& pos, bool white)
     if ('.' != current_occupant) bits.capture = true;
 #endif
 
-    if ('P' == bits.piece) {
-        fillin_pawn(bits, pos, white);
-    } else if ('B' == bits.piece) {
-        fillin_bishop(bits, pos, white);
+    switch (bits.piece) {
+        case 'P':
+            fillin_pawn(bits, pos, white);
+            break;
+        case 'B':
+        case 'R':
+        case 'Q':
+            fillin_slider(bits, pos, white);
+            break;
+        default:
+            throw Bad_move{std::string{"Unrecognized piece: "} + bits.piece};
+            break;
     }
 }
 
