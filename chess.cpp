@@ -30,6 +30,41 @@
  *  Input/output
  */
 
+/*
+ * PGN standard: http://www.saremba.de/chessgml/standards/pgn/pgn-complete.htm
+ * (Is there a more canonical link?)
+ * https://www.chessprogramming.org/Main_Page
+ * http://www.cs.cmu.edu/afs/cs/project/ai-repository/ai/areas/games/chess/san/
+ */
+
+/*
+ * A couple of interesting Unicode characters:
+ * U+1FA4F WHITE CHESS KNIGHT-ROOK
+ * U+1FA50 WHITE CHESS KNIGHT-BISHOP
+ * U+1FA52 BLACK CHESS KNIGHT-ROOK
+ * U+1FA53 BLACK CHESS KNIGHT-BISHOP
+ */
+
+//TODO: Thinking based on 0x88 research:
+/*
+ * Move generation for everything except pawns, knights, & castling:
+ *
+ * bishop: (+1,+1), (+1,-1), (-1,+1), (-1,-1)
+ * rook: (+1,0), (-1,0), (0,+1), (0,-1)
+ * queen: bishop + rook
+ *
+ * Or...
+ *  Find candidate pieces
+ *  Filter out those that aren't orthogonal or diagonal as required
+ *  Use difference in co-ordinates as vector to check intervening squares
+ *
+ * Scanning the whole board for candidates is more work than just scanning
+ * in the directions of movement. So, I should probably change to that.
+ *
+ * I'm not sure whether the 0x88 board representation would be significantly
+ * more efficient on modern hardware.
+ */
+
 bool use_unicode = true;
 
 int file_to_index(char c)
@@ -62,16 +97,17 @@ struct Position {
     //Should we make the board private?
     //How important would enforcing invariants be?
 
+    //Returns the piece in the given square.
+    //Returns '.' for an empty square.
+    //Returns '!' for an off-the-board square.
     char get(char file, char rank) const
     {
-        try {
-            auto fi { file_to_index(file) };
-            auto ri { rank_to_index(rank) };
-            return board.at(ri).at(fi);
-        } catch (...) {
-            //TODO: This seems sus...
-            return '.';
+        auto fi { file_to_index(file) };
+        auto ri { rank_to_index(rank) };
+        if ((fi < 0) or (fi > 7) or (ri < 0) or (ri > 7)) {
+            return '!';
         }
+        return board[ri][fi];
     }
 
     void put(char file, char rank, char piece)
@@ -214,57 +250,49 @@ void fillin_pawn(San_bits& bits, const Position& pos, bool white)
     }
 }
 
-void fillin_bishop(San_bits& bits, const Position& pos, bool white)
+void find_candidates(Position::Square_list& squares, const San_bits& bits, const Position& pos, const char piece, const char file_offset, const char rank_offset)
 {
-    //Keep in mind that, due to promotion, there may be two light-square or two dark-square bishops!
-    auto mag = [](char a, char b)
-    {
-        if (a > b) return a - b;
-        else return b - a;
-    };
-
-    auto not_diagonal = [mag](auto a, auto b)
-    {
-        return mag(a.first, b.first) != mag(a.second, b.second);
-    };
-
-    if (bits.capture) {
-        //TODO
-    } else {
-        if (white) {
-            auto bishops { pos.find('B') };
-            if (bishops.empty()) std::cout << "No bishops!\n";
-
-#if 0
-            for (const auto& bishop: bishops) {
-                std::cout << "Bishop: " << bishop.first << bishop.second << '\n';
-            }
-#endif
-
-            bishops.erase(
-                    std::remove_if(bishops.begin(), bishops.end(),
-                        [&](auto b)
-                        {
-                            return not_diagonal(std::make_pair(bits.to_file, bits.to_rank), b);
-                        }), bishops.end());
-
-#if 0
-            std::cout << "after\n";
-            for (const auto& bishop: bishops) {
-                std::cout << "Bishop: " << bishop.first << bishop.second << '\n';
-            }
-#endif
-
-            //TODO: Make sure there are no intervening pieces.
-
-            if (bishops.size() != 1) throw Bad_move{to_string(bits)};
-
-            bits.from_file = bishops[0].first;
-            bits.from_rank = bishops[0].second;
-        } else {
-            //TODO
+    char file { bits.to_file };
+    char rank { bits.to_rank };
+    while (true) {
+        file += file_offset;
+        rank += rank_offset;
+        const auto contents { pos.get(file, rank) };
+        if (piece == contents) {
+            squares.push_back(std::make_pair(file, rank));
+            return;
+        }
+        if ('.' != contents) {
+            return;
         }
     }
+}
+
+Position::Square_list find_candidate_bishops(San_bits& bits, const Position& pos, bool white)
+{
+    const char piece { white? 'B': 'b' };
+    Position::Square_list squares;
+    find_candidates(squares, bits, pos, piece, -1, -1);
+    find_candidates(squares, bits, pos, piece, -1, 1);
+    find_candidates(squares, bits, pos, piece, 1, -1);
+    find_candidates(squares, bits, pos, piece, 1, 1);
+    return squares;
+}
+
+void fillin_bishop(San_bits& bits, const Position& pos, const bool white)
+{
+    //TODO: Handle captures
+    auto candidates { find_candidate_bishops(bits, pos, white) };
+    if (0 == candidates.size()) throw Bad_move{to_string(bits)};
+    if (1 == candidates.size()) {
+        bits.from_file = candidates[0].first;
+        bits.from_rank = candidates[0].second;
+        return;
+    }
+    for (const auto& bishop: candidates) {
+        std::cout << "candidate: " << bishop.first << bishop.second << '\n';
+    }
+    throw Bad_move{"Too many bishops"}; //TODO: Probably something else here
 }
 
 //TODO: This doesn't catch many illegal moves. I'm not sure if it should.
@@ -320,6 +348,8 @@ San_bits san_to_move(const Position& pos, std::string_view san, bool white)
     //  N1xf3       ...with capture
     //  Ng1f3       Piece move with starting rank & file
     //  Ng1xf3      ...with capture
+    //Needing both starting rank & file can occur in a game with either
+    //3 queens or 3 knights.
 
     //Handle empty string
     if (san.empty()) throw Bad_move{""};
@@ -356,6 +386,17 @@ I find_not(I first, I last, T x)
     return std::find_if(first, last, [x](T y){ return y != x; });
 }
 
+//FEN info after the piece positions:
+//  Active color: w or b
+//  Castling:
+//      -       neither side can castle
+//      KQkq    either side can castle to king- or queen- side
+//  En passant target square after a pawn 2-square move (or -)
+//      This is the positon "behind" the pawn that moved.
+//      After e4 it would be e3.
+//  Halfmove clock: The number of half-moves since the last capture or pawn advance
+//  Fullmove clock: Incremented after black's move
+//X-FEN has extensions to support Chess960 & Capablanca Random Chess
 std::string pos_to_fen(const Position& pos)
 {
     //TODO: Just use a string or vector instead of a stringstream?
@@ -495,7 +536,7 @@ int main()
     const std::string start(
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     Position pos;
-    bool white_to_play{true}; //TODO: Make part of position?
+    bool white_to_play{true}; //TODO: Make part of position? Yes, so it gets reset with undo!
     set_position(pos, start);
     undo_pos = pos;
     print_position(pos);
