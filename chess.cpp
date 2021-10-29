@@ -335,6 +335,24 @@ Position::Square_list find_candidates(San_bits& bits, const Position& pos)
 void fillin_nonpawn(San_bits& bits, const Position& pos)
 {
     auto candidates { find_candidates(bits, pos) };
+    //If a from_file was specified, remove candidates in other files.
+    if ('\0' != bits.from_file) {
+        candidates.erase(
+                std::remove_if(
+                    candidates.begin(), candidates.end(),
+                    [file = bits.from_file](const auto& candidate)
+                    { return candidate.first != file; }),
+                candidates.end());
+    }
+    //If a from_rank was specified, remove candidates from other ranks.
+    if ('\0' != bits.from_rank) {
+        candidates.erase(
+                std::remove_if(
+                    candidates.begin(), candidates.end(),
+                    [rank = bits.from_rank](const auto& candidate)
+                    { return candidate.second != rank; }),
+                candidates.end());
+    }
     if (0 == candidates.size()) throw Bad_move{to_string(bits)};
     if (1 == candidates.size()) {
         bits.from_file = candidates[0].first;
