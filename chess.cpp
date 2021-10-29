@@ -14,14 +14,13 @@
 
 /*
  * TODO:
- * DONE Print FEN.
  * Include "metadata" in FEN output.
  * Commands to place pieces on the board. (Ne4 would put a kinght on e4?)
- * DONE Command to clear the board.
  * Convert/display PGN files using Unicode pieces instead of letters.
  * Command to display captured pieces. (Need to track promotions!)
  * General C++17 updates?
  * Update to use C++20 ranges/algorithms?
+ * Prevent moves that leave the king in check?
  *
  * Break up different parts?
  *  Position structure
@@ -587,12 +586,23 @@ void help()
         "e.g. e2-e4\n";
 }
 
-int main()
+int main(const int argc, const char** argv)
 {
     const std::string start(
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+
     Position pos;
-    set_position(pos, start);
+
+    std::vector<std::string_view> args(argv + 1, argv + argc);
+    if (not args.empty()) {
+        std::ifstream in{args[0]};
+        std::string line;
+        std::getline(in, line);
+        set_position(pos, line);
+    } else {
+        set_position(pos, start);
+    }
+
     undo_pos = pos;
     print_position(pos);
     std::string line;
