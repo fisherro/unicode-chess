@@ -18,9 +18,10 @@
  * Commands to place pieces on the board. (Ne4 would put a kinght on e4?)
  * DONE Command to clear the board.
  * Convert/display PGN files using Unicode pieces instead of letters.
- * Command to display captures.
+ * Command to display captured pieces. (Need to track promotions!)
  * General C++17 updates?
  * Update to use C++20 ranges/algorithms?
+ * Prevent moving on top of your own piece!
  *
  * Break up different parts?
  *  Position structure
@@ -66,6 +67,21 @@
  */
 
 bool use_unicode = true;
+
+/*
+ * To use the C toupper/tolower functions safely in C++, you have to write...
+ *
+ *  tolower(static_cast<unsigned char>(c))
+ *
+ * And the C++ versions take a locale.
+ *
+ * So, either way, best to wrap them in another function. Sigh.
+ */
+
+char toupper(char c) { return std::toupper(c, std::locale()); }
+char tolower(char c) { return std::tolower(c, std::locale()); }
+bool isupper(char c) { return std::isupper(c, std::locale()); }
+bool islower(char c) { return std::islower(c, std::locale()); }
 
 int file_to_index(char c)
 {
@@ -290,7 +306,7 @@ Position::Square_list find_slider_candidates(San_bits& bits, const Position& pos
 
 void fillin_slider(San_bits& bits, const Position& pos, const bool white)
 {
-    const char piece = white? std::toupper(bits.piece, std::locale()): std::tolower(bits.piece, std::locale());
+    const char piece = white? toupper(bits.piece): tolower(bits.piece);
     auto candidates { find_slider_candidates(bits, pos, piece) };
     if (0 == candidates.size()) throw Bad_move{to_string(bits)};
     if (1 == candidates.size()) {
@@ -391,7 +407,7 @@ San_bits san_to_move(const Position& pos, std::string_view san, bool white)
     Move move;
 
     if (not white) {
-        move.piece = std::tolower(move.piece, std::locale());
+        move.piece = tolower(move.piece);
     }
 
     return move;
@@ -513,7 +529,7 @@ void do_move_new(Position& pos, std::string_view input, bool& white_to_play)
     try {
         auto bits = san_to_move(pos, input, white_to_play);
         undo_pos = pos;
-        if (not white_to_play) bits.piece = std::tolower(bits.piece, std::locale());
+        if (not white_to_play) bits.piece = tolower(bits.piece);
         white_to_play = not white_to_play;
         pos.put(bits.to_file, bits.to_rank, bits.piece);
         pos.put(bits.from_file, bits.from_rank, '.');
