@@ -103,9 +103,16 @@ struct Position {
     using Square = std::pair<char, char>;
     using Square_list = std::vector<Square>;
 
-    using Rank = std::array<char, 8>;
-    using Board = std::array<Rank, 8>;
-    Board board;
+    using   Rank = std::array<char, 8>;
+    using   Board = std::array<Rank, 8>;
+    Board   board;
+    bool    white_to_play{true};
+
+    void toggle_player()
+    {
+        white_to_play = not white_to_play;
+    }
+
     //How do we use this?
     //board.at(rank_index).at(file_index) = x
     //= board.at(rank_index).at(file_index)
@@ -153,7 +160,7 @@ struct Position {
 
 Position undo_pos;
 
-void set_position(Position& pos, std::string_view fen)
+void set_board_position(Position& pos, std::string_view fen)
 {
     int rank_index = 0; // 0 == rank 8
     int file_index = 0; // 0 == a
@@ -173,6 +180,15 @@ void set_position(Position& pos, std::string_view fen)
             ++file_index;
         }
     }
+}
+
+void set_position(Position& pos, std::string_view fen)
+{
+    auto space = fen.find(' ');
+    set_board_position(pos, fen.substr(0, space));
+    fen = fen.substr(space + 1);
+    if (fen.empty()) return;
+    pos.white_to_play = 'w' == fen[0];
 }
 
 bool contains(std::string_view sv, char c)
@@ -228,19 +244,19 @@ San_bits parse_san_bits(std::string_view san)
     return bits;
 }
 
-void check_current_occupant(const San_bits& bits, const Position& pos, bool white)
+void check_current_occupant(const San_bits& bits, const Position& pos)
 {
     char current_occupant { pos.get(bits.to_file, bits.to_rank) };
-    if ((white and isupper(current_occupant)) or ((not white) and islower(current_occupant))) throw Bad_move{"That space is taken!"};
+    if ((pos.white_to_play and isupper(current_occupant)) or ((not pos.white_to_play) and islower(current_occupant))) throw Bad_move{"That space is taken!"};
 }
 
-void fillin_pawn(San_bits& bits, const Position& pos, bool white)
+void fillin_pawn(San_bits& bits, const Position& pos)
 {
     //TODO: to_rank is optional, but I don't want to think about that yet
     if (bits.capture) {
         //TODO: Let's wait on the capture branch...
         //TODO: Need to eventually handle en passant
-        if (white) {
+        if (pos.white_to_play) {
 #if 0
             auto left { pos.get(bits.file - 1, bits.rank - 1) };
             auto right { pos.get(bits.file + 1, bits.rank - 1) };
@@ -250,7 +266,7 @@ void fillin_pawn(San_bits& bits, const Position& pos, bool white)
     } else {
         //TODO: Should we check to see if from_file is set first?
         bits.from_file = bits.to_file;
-        if (white) {
+        if (pos.white_to_play) {
             if ('P' == pos.get(bits.to_file, bits.to_rank - 1)) {
                 bits.from_rank = bits.to_rank - 1;
             } else if (('4' == bits.to_rank) and ('P' == pos.get(bits.to_file, '2')) and ('.' == pos.get(bits.to_file, '3'))) {
@@ -298,7 +314,7 @@ V merge_vectors(const V& a, const V& b)
     return v;
 }
 
-Position::Square_list find_candidates(San_bits& bits, const Position& pos, bool white)
+Position::Square_list find_candidates(San_bits& bits, const Position& pos)
 {
     using Offsets_list = std::vector<std::pair<int, int>>;
     const Offsets_list b_offsets{{-1,-1},{-1,1},{1,-1},{1,1}};
@@ -307,7 +323,7 @@ Position::Square_list find_candidates(San_bits& bits, const Position& pos, bool 
     const Offsets_list q_offsets{merge_vectors(b_offsets, r_offsets)};
     const std::unordered_map<char, std::reference_wrapper<const Offsets_list>> map{{'B', b_offsets}, {'R', r_offsets}, {'N', n_offsets}, {'Q', q_offsets}, {'K', q_offsets}};
 
-    const char piece = white? toupper(bits.piece): tolower(bits.piece);
+    const char piece = pos.white_to_play? toupper(bits.piece): tolower(bits.piece);
     bool slider = ('N' != bits.piece) and ('K' != bits.piece);
     auto offset_list = map.at(bits.piece);
     Position::Square_list squares;
@@ -317,9 +333,9 @@ Position::Square_list find_candidates(San_bits& bits, const Position& pos, bool 
     return squares;
 }
 
-void fillin_nonpawn(San_bits& bits, const Position& pos, const bool white)
+void fillin_nonpawn(San_bits& bits, const Position& pos)
 {
-    auto candidates { find_candidates(bits, pos, white) };
+    auto candidates { find_candidates(bits, pos) };
     if (0 == candidates.size()) throw Bad_move{to_string(bits)};
     if (1 == candidates.size()) {
         bits.from_file = candidates[0].first;
@@ -334,7 +350,7 @@ void fillin_nonpawn(San_bits& bits, const Position& pos, const bool white)
 }
 
 //TODO: This doesn't catch many illegal moves. I'm not sure if it should.
-void fillin_san_blanks(San_bits& bits, const Position& pos, bool white)
+void fillin_san_blanks(San_bits& bits, const Position& pos)
 {
     if ('\0' == bits.piece) bits.piece = 'P';
 
@@ -345,12 +361,12 @@ void fillin_san_blanks(San_bits& bits, const Position& pos, bool white)
     //TODO: Should probably report if the notation didn't say it was a capture
     if ('.' != current_occupant) bits.capture = true;
 #endif
-    check_current_occupant(bits, pos, white);
+    check_current_occupant(bits, pos);
 
     if ('P' == bits.piece) {
-        fillin_pawn(bits, pos, white);
+        fillin_pawn(bits, pos);
     } else {
-        fillin_nonpawn(bits, pos, white);
+        fillin_nonpawn(bits, pos);
     }
 }
 
@@ -369,7 +385,7 @@ struct Move {
 #if 0
 Move san_to_move(const Position& pos, std::string_view san, bool white)
 #else
-San_bits san_to_move(const Position& pos, std::string_view san, bool white)
+San_bits san_to_move(const Position& pos, std::string_view san)
 #endif
 {
     //Types of moves to handle:
@@ -403,7 +419,7 @@ San_bits san_to_move(const Position& pos, std::string_view san, bool white)
     auto bits { parse_san_bits(san) };
 
     //Resolve implicit parts of bits...
-    fillin_san_blanks(bits, pos, white);
+    fillin_san_blanks(bits, pos);
 
     return bits;
 #if 0
@@ -469,6 +485,7 @@ std::string pos_to_fen(const Position& pos)
             }
         }
     }
+    ss << ' ' << (pos.white_to_play? 'w': 'b');
     return ss.str();
     //TODO: Need to track the info to add the annotations at the end.
 }
@@ -529,15 +546,15 @@ void do_move(Position& pos, std::string_view input)
     pos.board.at(start_rank).at(start_file) = '.';
 }
 
-void do_move_new(Position& pos, std::string_view input, bool& white_to_play)
+void do_move_new(Position& pos, std::string_view input)
 {
     try {
-        auto bits = san_to_move(pos, input, white_to_play);
+        auto bits = san_to_move(pos, input);
         undo_pos = pos;
-        if (not white_to_play) bits.piece = tolower(bits.piece);
-        white_to_play = not white_to_play;
+        if (not pos.white_to_play) bits.piece = tolower(bits.piece);
         pos.put(bits.to_file, bits.to_rank, bits.piece);
         pos.put(bits.from_file, bits.from_rank, '.');
+        pos.toggle_player();
     } catch (const Bad_move& bad) {
         std::cout << std::quoted(input) << " is not a valid move.\n";
         std::cout << bad.what() << '\n';
@@ -575,12 +592,11 @@ int main()
     const std::string start(
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     Position pos;
-    bool white_to_play{true}; //TODO: Make part of position? Yes, so it gets reset with undo!
     set_position(pos, start);
     undo_pos = pos;
     print_position(pos);
     std::string line;
-    std::cout << (white_to_play? "white": "black") << "> " << std::flush;
+    std::cout << (pos.white_to_play? "white": "black") << "> " << std::flush;
     while (std::getline(std::cin, line)) {
         if (("quit" == line) or ("exit" == line)) {
             break;
@@ -601,15 +617,11 @@ int main()
         } else if ("fen" == line) {
             std::cout << pos_to_fen(pos) << '\n';
         } else {
-#if 0
-            do_move(pos, line);
-#else
-            do_move_new(pos, line, white_to_play);
-#endif
+            do_move_new(pos, line);
         }
         print_position(pos);
 
-        std::cout << (white_to_play? "white": "black") << "> " << std::flush;
+        std::cout << (pos.white_to_play? "white": "black") << "> " << std::flush;
     }
 }
 
