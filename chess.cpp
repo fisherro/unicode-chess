@@ -66,7 +66,7 @@
  * more efficient on modern hardware.
  */
 
-bool use_unicode = true;
+bool use_unicode = false;
 
 /*
  * To use the C toupper/tolower functions safely in C++, you have to write...
@@ -228,6 +228,12 @@ San_bits parse_san_bits(std::string_view san)
     return bits;
 }
 
+void check_current_occupant(const San_bits& bits, const Position& pos, bool white)
+{
+    char current_occupant { pos.get(bits.to_file, bits.to_rank) };
+    if ((white and isupper(current_occupant)) or ((not white) and islower(current_occupant))) throw Bad_move{"That space is taken!"};
+}
+
 void fillin_pawn(San_bits& bits, const Position& pos, bool white)
 {
     //TODO: to_rank is optional, but I don't want to think about that yet
@@ -333,6 +339,7 @@ void fillin_san_blanks(San_bits& bits, const Position& pos, bool white)
     //TODO: Should probably report if the notation didn't say it was a capture
     if ('.' != current_occupant) bits.capture = true;
 #endif
+    check_current_occupant(bits, pos, white);
 
     switch (bits.piece) {
         case 'P':
