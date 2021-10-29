@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 
 /*
@@ -21,7 +22,6 @@
  * Command to display captured pieces. (Need to track promotions!)
  * General C++17 updates?
  * Update to use C++20 ranges/algorithms?
- * Prevent moving on top of your own piece!
  *
  * Break up different parts?
  *  Position structure
@@ -90,7 +90,7 @@ int file_to_index(char c)
 
 int rank_to_index(int r)
 {
-    //TODO: Should we really be doing ASCII math?
+    //We've decided to rely on ASCII math for file co-ords.
     return 8 - (r - '0');
 }
 
@@ -272,11 +272,11 @@ void fillin_pawn(San_bits& bits, const Position& pos, bool white)
     }
 }
 
-void find_candidates(Position::Square_list& squares, const San_bits& bits, const Position& pos, const char piece, const char file_offset, const char rank_offset)
+void find_candidates_helper(Position::Square_list& squares, const San_bits& bits, const Position& pos, const char piece, const char file_offset, const char rank_offset, bool slider)
 {
     char file { bits.to_file };
     char rank { bits.to_rank };
-    while (true) {
+    do {
         file += file_offset;
         rank += rank_offset;
         const auto contents { pos.get(file, rank) };
@@ -287,33 +287,39 @@ void find_candidates(Position::Square_list& squares, const San_bits& bits, const
         if ('.' != contents) {
             return;
         }
-    }
+    } while (slider); //For steppers, only do one iteration.
 }
 
-//Note: piece is already cased by player color
-Position::Square_list find_slider_candidates(San_bits& bits, const Position& pos, const char piece)
+template <typename V>
+V merge_vectors(const V& a, const V& b)
+{
+    V v(a.begin(), a.end());
+    std::copy(b.begin(), b.end(), std::back_inserter(v));
+    return v;
+}
+
+Position::Square_list find_candidates(San_bits& bits, const Position& pos, bool white)
 {
     using Offsets_list = std::vector<std::pair<int, int>>;
-    const Offsets_list bishop_offsets{{-1,-1},{-1,1},{1,-1},{1,1}};
-    const Offsets_list rook_offsets{{-1,0},{0,-1},{1,0},{0,1}};
+    const Offsets_list b_offsets{{-1,-1},{-1,1},{1,-1},{1,1}};
+    const Offsets_list r_offsets{{-1,0},{0,-1},{1,0},{0,1}};
+    const Offsets_list n_offsets{{-2,-1},{-2,1},{2,-1},{2,1},{-1,-2},{-1,2},{1,-2},{1,2}};
+    const Offsets_list q_offsets{merge_vectors(b_offsets, r_offsets)};
+    const std::unordered_map<char, std::reference_wrapper<const Offsets_list>> map{{'B', b_offsets}, {'R', r_offsets}, {'N', n_offsets}, {'Q', q_offsets}, {'K', q_offsets}};
+
+    const char piece = white? toupper(bits.piece): tolower(bits.piece);
+    bool slider = ('N' != bits.piece) and ('K' != bits.piece);
+    auto offset_list = map.at(bits.piece);
     Position::Square_list squares;
-    if ('R' != bits.piece) {
-        for (const auto& offsets: bishop_offsets) {
-            find_candidates(squares, bits, pos, piece, offsets.first, offsets.second);
-        }
-    }
-    if ('B' != bits.piece) {
-        for (const auto& offsets: rook_offsets) {
-            find_candidates(squares, bits, pos, piece, offsets.first, offsets.second);
-        }
+    for (const auto& offsets: offset_list.get()) {
+        find_candidates_helper(squares, bits, pos, piece, offsets.first, offsets.second, slider);
     }
     return squares;
 }
 
-void fillin_slider(San_bits& bits, const Position& pos, const bool white)
+void fillin_nonpawn(San_bits& bits, const Position& pos, const bool white)
 {
-    const char piece = white? toupper(bits.piece): tolower(bits.piece);
-    auto candidates { find_slider_candidates(bits, pos, piece) };
+    auto candidates { find_candidates(bits, pos, white) };
     if (0 == candidates.size()) throw Bad_move{to_string(bits)};
     if (1 == candidates.size()) {
         bits.from_file = candidates[0].first;
@@ -341,18 +347,10 @@ void fillin_san_blanks(San_bits& bits, const Position& pos, bool white)
 #endif
     check_current_occupant(bits, pos, white);
 
-    switch (bits.piece) {
-        case 'P':
-            fillin_pawn(bits, pos, white);
-            break;
-        case 'B':
-        case 'R':
-        case 'Q':
-            fillin_slider(bits, pos, white);
-            break;
-        default:
-            throw Bad_move{std::string{"Unrecognized piece: "} + bits.piece};
-            break;
+    if ('P' == bits.piece) {
+        fillin_pawn(bits, pos, white);
+    } else {
+        fillin_nonpawn(bits, pos, white);
     }
 }
 
