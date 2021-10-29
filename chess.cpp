@@ -359,7 +359,6 @@ void fillin_nonpawn(San_bits& bits, const Position& pos)
         bits.from_rank = candidates[0].second;
         return;
     }
-    //TODO: Disambiguate candidates if possible
     for (const auto& candidate: candidates) {
         std::cout << "candidate: " << candidate.first << candidate.second << '\n';
     }
