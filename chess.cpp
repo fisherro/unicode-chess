@@ -196,6 +196,7 @@ bool contains(std::string_view sv, char c)
 }
 
 struct San_bits {
+    char    castle      {'\0'}; //One of: KQkq
     char    piece       {'\0'};
     char    from_file   {'\0'};
     char    from_rank   {'\0'};
@@ -386,6 +387,33 @@ void fillin_san_blanks(San_bits& bits, const Position& pos)
     }
 }
 
+San_bits parse_castle(const Position& pos, std::string_view san)
+{
+    //TODO: Check that castling is still allowed
+    //TODO: Check that castling isn't prevented by check
+    Bad_move bad{san};
+    auto count = std::count_if(san.begin(), san.end(),
+            [](char c){ return ('O' == c) or ('0' == c) or ('o' == c); });
+    if ((count < 2) or (count > 3)) throw bad;
+    char rank { pos.white_to_play? '1': '8' };
+    if ('k' != tolower(pos.get('e', rank))) throw bad;
+    San_bits bits;
+    if (2 == count) {
+        bits.castle = 'k';
+        if ('.' != pos.get('f', rank)) throw bad;
+        if ('.' != pos.get('g', rank)) throw bad;
+        if ('r' != tolower(pos.get('h', rank))) throw bad;
+    } else {
+        bits.castle = 'q';
+        if ('.' != pos.get('d', rank)) throw bad;
+        if ('.' != pos.get('c', rank)) throw bad;
+        if ('.' != pos.get('b', rank)) throw bad;
+        if ('r' != tolower(pos.get('a', rank))) throw bad;
+    }
+    if (pos.white_to_play) bits.castle = toupper(bits.castle);
+    return bits;
+}
+
 //TODO: Is this needed? Is San_bits enough? Rename it to Move?
 struct Move {
     char    piece{'.'};
@@ -425,13 +453,13 @@ San_bits san_to_move(const Position& pos, std::string_view san)
     //Handle empty string
     if (san.empty()) throw Bad_move{""};
 
-    //Parse the bits of the move
-    if (('0' == san[0]) || ('O' == san[0])) {
-        //TODO
-        //We won't do castling yet...
-        throw Bad_move{san};
+    //Check for castling
+    //SAN uses 0; PGN uses O; be permissive and allow o
+    if (('0' == san[0]) or ('O' == san[0]) or ('o' == san[0])) {
+        return parse_castle(pos, san);
     }
 
+    //Parse the bits of the move
     auto bits { parse_san_bits(san) };
 
     //Resolve implicit parts of bits...
@@ -562,14 +590,34 @@ void do_move(Position& pos, std::string_view input)
     pos.board.at(start_rank).at(start_file) = '.';
 }
 
+void do_castle(Position& pos, const San_bits& bits)
+{
+    char rank { pos.white_to_play? '1': '8' };
+    if ('k' == tolower(bits.castle)) {
+        pos.put('g', rank, pos.get('e', rank));
+        pos.put('f', rank, pos.get('h', rank));
+        pos.put('e', rank, '.');
+        pos.put('h', rank, '.');
+    } else {
+        pos.put('c', rank, pos.get('e', rank));
+        pos.put('d', rank, pos.get('a', rank));
+        pos.put('e', rank, '.');
+        pos.put('a', rank, '.');
+    }
+}
+
 void do_move_new(Position& pos, std::string_view input)
 {
     try {
         auto bits = san_to_move(pos, input);
         undo_pos = pos;
-        if (not pos.white_to_play) bits.piece = tolower(bits.piece);
-        pos.put(bits.to_file, bits.to_rank, bits.piece);
-        pos.put(bits.from_file, bits.from_rank, '.');
+        if ('\0' != bits.castle) {
+            do_castle(pos, bits);
+        } else {
+            if (not pos.white_to_play) bits.piece = tolower(bits.piece);
+            pos.put(bits.to_file, bits.to_rank, bits.piece);
+            pos.put(bits.from_file, bits.from_rank, '.');
+        }
         pos.toggle_player();
     } catch (const Bad_move& bad) {
         std::cout << std::quoted(input) << " is not a valid move.\n";
