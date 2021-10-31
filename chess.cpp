@@ -22,6 +22,7 @@
  * Update to use C++20 ranges/algorithms?
  * Prevent moves that leave the king in check?
  * Rename San_bits to Move?
+ * Check any place outside of the initial parse where we set a member of San_bits. Warn/error if what is there isn't valid?
  *
  * Break up different parts?
  *  Position structure
@@ -231,22 +232,44 @@ void check_current_occupant(const San_bits& bits, const Position& pos)
     if ((pos.white_to_play and isupper(current_occupant)) or ((not pos.white_to_play) and islower(current_occupant))) throw Bad_move{"That space is taken!"};
 }
 
+bool is_opponent(const Position& pos, const char file, const char rank)
+{
+    char current_occupant { pos.get(file, rank) };
+    return (pos.white_to_play and islower(current_occupant)) or
+        ((not pos.white_to_play) and isupper(current_occupant));
+}
+
 void fillin_pawn(San_bits& bits, const Position& pos)
 {
     //TODO: to_rank is optional, but I don't want to think about that yet
+    bool target_is_opponent { is_opponent(pos, bits.to_file, bits.to_rank) };
+    if (target_is_opponent) {
+        //Target square contains an enemy piece.
+        //TODO: Report if bits.capture is false?
+        bits.capture = true;
+    }
+    
     if (bits.capture) {
-        //TODO: Let's wait on the capture branch...
+        if (not target_is_opponent) throw Bad_move{to_string(bits)};
         //TODO: Need to eventually handle en passant
-        if (pos.white_to_play) {
-#if 0
-            auto left { pos.get(bits.file - 1, bits.rank - 1) };
-            auto right { pos.get(bits.file + 1, bits.rank - 1) };
-#endif
-        } else {
+        bits.from_rank = bits.to_rank + (pos.white_to_play? -1: 1);
+        const auto left { pos.get(bits.to_file - 1, bits.from_rank) };
+        const auto right { pos.get(bits.to_file + 1, bits.from_rank) };
+        const char piece { pos.white_to_play? 'P': 'p' };
+        if ((piece != left) and (piece != right)) throw Bad_move{to_string(bits)};
+        if ((piece == left) and (piece == right) and ('\0' == bits.from_file)) {
+            throw Bad_move{"Ambiguous!"};
+        }
+        if ('\0' == bits.from_file) {
+            if (piece == left) bits.from_file = bits.to_file - 1;
+            else if (piece == right) bits.from_file = bits.to_file + 1;
+            else throw Bad_move{to_string(bits)};
         }
     } else {
+        //TODO: Check to make sure target square is empty?
         //TODO: Should we check to see if from_file is set first?
         bits.from_file = bits.to_file;
+        //TODO: Refactor the white & black branches into one
         if (pos.white_to_play) {
             if ('P' == pos.get(bits.to_file, bits.to_rank - 1)) {
                 bits.from_rank = bits.to_rank - 1;
@@ -267,6 +290,7 @@ void fillin_pawn(San_bits& bits, const Position& pos)
             }
         }
     }
+    //TODO: Promotion
 }
 
 void find_candidates_helper(Position::Square_list& squares, const San_bits& bits, const Position& pos, const char piece, const char file_offset, const char rank_offset, bool slider)
@@ -527,6 +551,7 @@ void print_position(const Position& pos)
     std::cout << "\n   a b c d e f g h\n";
 }
 
+//We may want to revive this under a different command, so not deleting it.
 void do_move(Position& pos, std::string_view input)
 {
     if (input.size() < 5) {
