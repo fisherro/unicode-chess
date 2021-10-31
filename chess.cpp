@@ -21,6 +21,7 @@
  * General C++17 updates?
  * Update to use C++20 ranges/algorithms?
  * Prevent moves that leave the king in check?
+ * Rename San_bits to Move?
  *
  * Break up different parts?
  *  Position structure
@@ -43,26 +44,6 @@
  * U+1FA50 WHITE CHESS KNIGHT-BISHOP
  * U+1FA52 BLACK CHESS KNIGHT-ROOK
  * U+1FA53 BLACK CHESS KNIGHT-BISHOP
- */
-
-//TODO: Thinking based on 0x88 research:
-/*
- * Move generation for everything except pawns, knights, & castling:
- *
- * bishop: (+1,+1), (+1,-1), (-1,+1), (-1,-1)
- * rook: (+1,0), (-1,0), (0,+1), (0,-1)
- * queen: bishop + rook
- *
- * Or...
- *  Find candidate pieces
- *  Filter out those that aren't orthogonal or diagonal as required
- *  Use difference in co-ordinates as vector to check intervening squares
- *
- * Scanning the whole board for candidates is more work than just scanning
- * in the directions of movement. So, I should probably change to that.
- *
- * I'm not sure whether the 0x88 board representation would be significantly
- * more efficient on modern hardware.
  */
 
 bool use_unicode = false;
@@ -414,23 +395,7 @@ San_bits parse_castle(const Position& pos, std::string_view san)
     return bits;
 }
 
-//TODO: Is this needed? Is San_bits enough? Rename it to Move?
-struct Move {
-    char    piece{'.'};
-    char    file{'\0'};
-    int     rank{0}; // 1 to 8...normal ranks not rank indices
-    // Do we care if it is a capture?
-    // Do we care if it is en passant?
-    // How do we handle castling?
-    // Do we care which color?
-    // Two "two part" moves: Castling & en passant
-};
-
-#if 0
-Move san_to_move(const Position& pos, std::string_view san, bool white)
-#else
 San_bits san_to_move(const Position& pos, std::string_view san)
-#endif
 {
     //Types of moves to handle:
     //  Castling (0-0 0-0-0 O-O-O) PGN use O instead of 0
@@ -466,17 +431,6 @@ San_bits san_to_move(const Position& pos, std::string_view san)
     fillin_san_blanks(bits, pos);
 
     return bits;
-#if 0
-    //Copy bits into move...
-
-    Move move;
-
-    if (not white) {
-        move.piece = tolower(move.piece);
-    }
-
-    return move;
-#endif
 }
 
 template <typename I, typename T>
